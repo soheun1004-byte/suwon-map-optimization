@@ -1,0 +1,3 @@
+[09-12] 상태: Optimization terminated successfully. (HiGHS Status 7: Optimal) | 선정 거점: [5, 6, 9, 11] | 평균 도착시간 3.5분 (차고지 단일 출동 가정 16.1분) | 연산 0.03초
+[15-18] 상태: Optimization terminated successfully. (HiGHS Status 7: Optimal) | 선정 거점: [1, 5, 7, 11] | 평균 도착시간 4.5분 (차고지 단일 출동 가정 20.9분) | 연산 0.02초
+※ 예시 데이터 결과이며 실제 운행내역 결과가 아님
