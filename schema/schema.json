@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ControlDriverProtocol",
+  "description": "관제사-운전원 시스템 간 송수신 데이터 규격 정의",
+  "type": "object",
+  "properties": {
+    "header": {
+      "type": "object",
+      "description": "송수신 공통 헤더 정보",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "description": "메시지 고유 ID"
+        },
+        "senderId": {
+          "type": "string",
+          "description": "발신자 ID (관제사/운전원)"
+        },
+        "receiverId": {
+          "type": "string",
+          "description": "수신자 ID"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "전송 시각"
+        }
+      },
+      "required": [
+        "messageId",
+        "senderId",
+        "receiverId",
+        "timestamp"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "description": "실제 전송 데이터 본문",
+      "properties": {
+        "vehicleId": {
+          "type": "string",
+          "description": "차량 번호/ID"
+        },
+        "latitude": {
+          "type": "number",
+          "description": "위도"
+        },
+        "longitude": {
+          "type": "number",
+          "description": "경도"
+        },
+        "speed": {
+          "type": "number",
+          "description": "현재 속도 (km/h)"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "READY",
+            "RUNNING",
+            "STOPPED",
+            "EMERGENCY",
+            "IDLE"
+          ],
+          "description": "운행 상태 (IDLE: 승객 하차 후 빈 차로 대기 — 9주차 추가)"
+        },
+        "targetSiteId": {
+          "type": "string",
+          "description": "관제→운전원: 이동해서 대기할 거점 ID (9주차 추가, 선택)"
+        }
+      },
+      "required": [
+        "vehicleId",
+        "status"
+      ]
+    }
+  },
+  "required": [
+    "header",
+    "payload"
+  ]
+}
