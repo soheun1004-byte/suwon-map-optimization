@@ -8,6 +8,9 @@
   grids.csv   grid_id, lat, lon                 500m 격자 중심 좌표
   demand.csv  grid_id, slot, calls              격자·시간대별 평균 즉시콜 수 (고객 취소 포함)
   sites.csv   site_id, name, lat, lon, capacity 후보 거점(병원·복지관 주차장, 차고지)
+  od.csv      slot, origin_grid, dest_grid, trips  (선택, 10주차) 시간대별 출발→도착 격자 하루 평균 통행 수
+              → 화면 ① 이동 패턴 분석용. 없으면 그 기능만 꺼짐
+  ※ 운행내역에서 위 CSV를 만드는 스크립트: tools/build_csvs.py
 
 이동시간 τ = 직선거리(km) ÷ 시간대별 속도(SPEED_KMH)
   ※ 지금은 직선거리. 나중에 실제 도로 이동시간으로 바꿀 자리.
@@ -50,7 +53,21 @@ def _sample_dataset():
              for j, c in enumerate(rng.integers(70, 120, 12))]
     demand = {"09-12": rng.poisson(6, 40) + 1, "15-18": rng.poisson(4, 40) + 1}
     demand = {s: {g["grid_id"]: float(v) for g, v in zip(grids, vals)} for s, vals in demand.items()}
-    return dict(source="sample", grids=grids, sites=sites, demand=demand)
+    # 출발→도착 (10주차): 오전엔 주거지(0~13번 격자)→목적지(14~27번), 오후엔 반대 방향이 많게
+    home, dest = [g["grid_id"] for g in grids[:14]], [g["grid_id"] for g in grids[14:28]]
+    others = [g["grid_id"] for g in grids]
+    od = {}
+    for slot, (src, dst) in {"09-12": (home, dest), "15-18": (dest, home)}.items():
+        c = {}
+        for _ in range(400):
+            if rng.random() < 0.7:
+                o, d = src[rng.integers(len(src))], dst[rng.integers(len(dst))]
+            else:
+                o, d = others[rng.integers(40)], others[rng.integers(40)]
+            if o != d:
+                c[(o, d)] = c.get((o, d), 0) + 0.25          # 하루 평균으로 환산한 값처럼
+        od[slot] = c
+    return dict(source="sample", grids=grids, sites=sites, demand=demand, od=od)
 
 
 def load_dataset():
@@ -65,7 +82,11 @@ def load_dataset():
     demand = {}
     for r in _read_csv("demand.csv"):
         demand.setdefault(r["slot"], {})[r["grid_id"]] = float(r["calls"])
-    return dict(source="processed", grids=grids, sites=sites, demand=demand)
+    od = {}
+    if (DATA_DIR / "od.csv").exists():
+        for r in _read_csv("od.csv"):
+            od.setdefault(r["slot"], {})[(r["origin_grid"], r["dest_grid"])] = float(r["trips"])
+    return dict(source="processed", grids=grids, sites=sites, demand=demand, od=od)
 
 
 def build_problem(ds, slot):

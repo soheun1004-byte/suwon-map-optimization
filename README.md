@@ -15,6 +15,8 @@
 | `src/api.py` | 관제 대시보드용 REST API (Flask) |
 | `src/db.py` | 2주차 스키마 연동: 메시지 검사(`schema.json`) + 저장(`vehicle_logs`) |
 | `schema/` | 2주차 송수신 스키마(`schema.json`, `schema.sql`) + SQLite 개발용 버전 |
+| `src/analysis.py` | 수요 분석 및 선제 배치 계획 화면용 계산 (이동 패턴, 수요 전망, 배치 계획) |
+| `tools/build_csvs.py` | 운행내역 원본 → grids/demand/od/sites CSV 변환 |
 | `tests/` | 유닛 테스트 (손계산 예제로 엔진 검증) + API 테스트 |
 | `results/pmedian_prototype.png` | 프로토타입 결과 그림 |
 | `results/run_log.txt` | 실행 로그 (선정 거점, 평균 도착시간, 연산 시간) |
@@ -23,7 +25,7 @@
 ## 실행
 ```bash
 pip install -r requirements.txt
-python -m pytest -v              # 테스트 (21개)
+python -m pytest -v              # 테스트 (31개)
 python src/pmedian_prototype.py  # 8주차 프로토타입 그림
 python src/api.py                # API 서버 → http://127.0.0.1:5000/api/health
 ```
@@ -34,3 +36,4 @@ python src/api.py                # API 서버 → http://127.0.0.1:5000/api/heal
 - 8주차: 모델 명세 v0.1, 프로토타입 코드 업로드
 - 9주차: 엔진 모듈 분리, 1차 유닛 테스트, REST API·데이터 파이프라인 골격 (현재 예시 데이터로 동작)
 - 9주차: 2주차 관제-운전원 스키마 통합 (메시지 검사·저장, 차량 조회, 빈 차 대기 거점 추천 API)
+- 10주차: 수요 분석 및 선제 배치 계획 화면용 API 3개(/api/patterns, /api/forecast, /api/plan), 운행내역→CSV 변환 스크립트

@@ -77,3 +77,65 @@ CSV 형식은 `src/pipeline.py` 맨 위 설명 참고.
 - 추천 시간대: 현재 시각이 09~12시면 `09-12`, 15~18시면 `15-18`, 그 밖은 `09-12`
 - 거점 수 P: 4
 - 추천 = 그 시간대에 선정된 거점 중 현재 위치에서 가장 가까운 곳 (다른 빈 차가 이미 가 있는지는 아직 안 봄)
+
+---
+
+# 수요 분석 및 선제 배치 계획 화면 (10주차 추가)
+
+> 가현이 화면의 3개 영역에 그대로 대응. 모두 `slot`(시간대)을 받으니 화면 위쪽 시간대 선택과 연결하면 됨.
+> 시간대 목록은 `GET /api/slots`. 실데이터를 넣으면 `06-09, 09-12, 12-15, 15-18, 18-21` 5개가 됨.
+
+| 화면 영역 | 메서드·주소 | 화면에 그릴 것 |
+|---|---|---|
+| ① 시간대별 이동 패턴 | `GET /api/patterns?slot=09-12&top=10` | 출발 집중 격자(`top_origins`), 도착 집중 격자(`top_destinations`), 주요 경로 화살표(`top_flows`), 주거지·주요 목적지 추정(`places`) |
+| ② 시간대별 수요 전망 | `GET /api/forecast?slot=09-12&P=4` | 격자 히트맵(`grids.expected_calls`), 수요 증가 예상 격자 강조(`rising_grids`), 선제 배치 제안 거점(`suggested_sites`) |
+| ③ 차량 배치 계획 | `GET /api/plan?slot=09-12&P=4&vehicles=20` | 거점별 배치 대수·근거(`sites`), 빈 차별 이동 지시 표(`moves`) |
+
+## ① GET /api/patterns
+```json
+{"slot": "09-12", "total_trips": 100.0,
+ "top_origins": [{"grid_id": "G010", "lat": 37.27, "lon": 127.00, "trips": 9.5, "share": 0.095}],
+ "top_destinations": [{"grid_id": "G022", "lat": 37.28, "lon": 127.03, "trips": 8.0, "share": 0.08}],
+ "top_flows": [{"origin": "G010", "dest": "G022", "trips": 1.5, "origin_lat": 37.27, "origin_lon": 127.00, "dest_lat": 37.28, "dest_lon": 127.03, "km": 2.9}],
+ "places": {"morning_slot": "09-12", "afternoon_slot": "15-18",
+            "homes": [{"grid_id": "G010", "lat": 37.27, "lon": 127.00, "score": 0.08}],
+            "destinations": [{"grid_id": "G025", "lat": 37.29, "lon": 127.02, "score": 0.07}]}}
+```
+- `trips`: 하루 평균 통행 수, `share`: 그 시간대 전체 통행 중 비율
+- `places`: 오전에 나가고 오후에 돌아오는 격자 = 주거지 후보, 그 반대 = 주요 목적지 후보 (추정)
+- od.csv가 없는 시간대를 넣으면 400
+
+## ② GET /api/forecast
+```json
+{"slot": "15-18", "method": "과거 동일 시간대 평균 (v0.1)", "total_expected_calls": 180.0, "top_share": 0.19,
+ "grids": [{"grid_id": "G023", "lat": 37.28, "lon": 127.02, "expected_calls": 6.0, "usual_calls": 4.0, "ratio": 1.5, "rising": true}],
+ "top_grids": ["...호출 많은 순 상위 top개..."],
+ "rising_grids": ["...평소보다 1.2배 이상 늘어나는 격자..."],
+ "suggested_sites": [{"site_id": "S01", "name": "예시 거점 1", "lat": 37.27, "lon": 127.01, "capacity": 104}]}
+```
+- `expected_calls`: 그 시간대 예상 호출 수 (과거 같은 시간대 하루 평균)
+- `usual_calls`: 그 격자의 전체 시간대 평균, `ratio` = expected ÷ usual
+- `rising`: ratio ≥ 1.2 이고 예상 호출 ≥ 1건 → **화면에서 색으로 강조**
+- `suggested_sites`: 이 시간대에 p-median이 고른 대기 거점 = 선제 배치 제안 지역
+
+## ③ GET /api/plan
+```json
+{"status": "optimal", "slot": "09-12", "P": 4, "n_vehicles": 20, "avg_travel_min": 3.52,
+ "vehicle_source": "vehicles 파라미터",
+ "sites": [{"site_id": "S05", "name": "예시 거점 5", "lat": 37.24, "lon": 127.03, "capacity": 114,
+            "load": 90.0, "vehicles": 7, "covers": ["G007", "G009", "G033"],
+            "reason": "예상 호출 90.0건을 맡음 (주요 격자: G007, G009, G033)"}],
+ "moves": [{"vehicle_id": "V009", "target_site_id": "S05", "travel_min": 4.2}]}
+```
+- `vehicles`: 그 거점에 대기시킬 차량 대수 (맡는 호출 수 비율대로 나눔)
+- `reason`: 관제사에게 보여줄 근거 문장
+- `moves`: 운전원 앱에서 `IDLE`(빈 차)로 보고된 차가 있을 때만 채워짐. 가까운 차부터 자리가 남은 거점으로 배정
+  - 빈 차 보고가 없으면 `vehicles=20`처럼 대수만 넣어서 계획을 볼 수 있음 (`vehicle_source`로 구분)
+- 관제사가 이동 지시를 승인하면, 운전원 앱에는 `/api/recommend`가 만드는 2주차 형식 `command`를 보내면 됨
+
+## 실데이터 넣기
+```bash
+pip install -r requirements.txt
+python tools/build_csvs.py 운행내역.xlsx            # data/processed/에 CSV 4개 생성
+python src/api.py                                   # /api/health 에서 data_source가 processed면 성공
+```

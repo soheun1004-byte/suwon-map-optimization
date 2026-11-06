@@ -14,6 +14,10 @@
                                    status가 IDLE(빈 차)이면 응답에 대기 거점 추천이 같이 옴
   GET  /api/vehicles               차량별 최신 위치·상태 (대시보드 지도용)
   GET  /api/recommend?lat=..&lon=..[&slot=09-12&P=4]   현재 위치에서 갈 대기 거점 추천
+  --- 수요 분석 및 선제 배치 계획 화면 (10주차) ---
+  GET  /api/patterns?slot=09-12[&top=10]    ① 시간대별 이동 패턴 (출발·도착 집중 격자, 주요 경로, 주거지·목적지 추정)
+  GET  /api/forecast?slot=09-12[&top=10]    ② 시간대별 수요 전망 (예상 호출 수, 수요 증가 예상 격자, 선제 배치 제안 거점)
+  GET  /api/plan?slot=09-12&P=4[&vehicles=20]  ③ 차량 배치 계획 (거점별 배치 대수, 빈 차 이동 지시)
 """
 import sys
 import uuid
@@ -25,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from engine import solve_pmedian
 from pipeline import load_dataset, build_problem, haversine_km, SPEED_KMH
 import db
+import analysis
 
 app = Flask(__name__)
 app.json.ensure_ascii = False          # 한글 그대로 출력
@@ -171,6 +176,64 @@ def recommend():
     if rec is None:
         return jsonify(error="해를 찾지 못함"), 422
     return jsonify(rec)
+
+
+# ---------------- 수요 분석 및 선제 배치 계획 화면 (10주차) ----------------
+def _slot_arg():
+    slot = request.args.get("slot")
+    return slot if slot in DATA["demand"] else None
+
+
+def _int_arg(name, default, lo, hi):
+    try:
+        v = int(request.args.get(name, default))
+    except ValueError:
+        return None
+    return v if lo <= v <= hi else None
+
+
+@app.get("/api/patterns")
+def patterns():
+    slot, top = request.args.get("slot"), _int_arg("top", 10, 1, 100)
+    if slot not in (DATA.get("od") or {}):
+        return jsonify(error=f"이동 패턴 데이터(od.csv)가 있는 시간대: {sorted(DATA.get('od') or {})}"), 400
+    if top is None:
+        return jsonify(error="top은 1~100"), 400
+    return jsonify(dict(analysis.movement_patterns(DATA, slot, top), data_source=DATA["source"]))
+
+
+@app.get("/api/forecast")
+def forecast():
+    slot, top = _slot_arg(), _int_arg("top", 10, 1, 100)
+    P = _int_arg("P", 4, 1, len(DATA["sites"]))
+    if slot is None or top is None or P is None:
+        return jsonify(error=f"slot은 {sorted(DATA['demand'])} 중 하나, top 1~100, P 1~{len(DATA['sites'])}"), 400
+    out = analysis.demand_outlook(DATA, slot, top)
+    r = plan(slot, P)                                     # 선제 배치 제안 = 이 시간대 p-median 선정 거점
+    out["suggested_sites"] = ([DATA["sites"][j] for j in r["open_sites"]] if r["status"] == "optimal" else [])
+    out["data_source"] = DATA["source"]
+    return jsonify(out)
+
+
+@app.get("/api/plan")
+def deployment():
+    slot = _slot_arg() or (current_slot() if "slot" not in request.args else None)
+    P = _int_arg("P", 4, 1, len(DATA["sites"]))
+    n = _int_arg("vehicles", 0, 0, 500)
+    if slot is None or P is None or n is None:
+        return jsonify(error="slot, P(1~후보 수), vehicles(0~500)를 확인"), 400
+    con = db.connect(app.config["DB_PATH"])
+    idle = [dict(vehicle_id=v["vehicle_id"], latitude=float(v["latitude"]), longitude=float(v["longitude"]))
+            for v in db.latest_vehicles(con)
+            if v["status"] == "IDLE" and v["latitude"] is not None and v["longitude"] is not None]
+    con.close()
+    # 실제 빈 차가 있으면 그 차들로, 없으면 vehicles 대수로 계획
+    out = analysis.deployment_plan(DATA, slot, P, idle_vehicles=idle or None, n_vehicles=n)
+    if out["status"] != "optimal":
+        return jsonify(out), 422
+    out["vehicle_source"] = "vehicle_logs(IDLE)" if idle else "vehicles 파라미터"
+    out["data_source"] = DATA["source"]
+    return jsonify(out)
 
 
 if __name__ == "__main__":
